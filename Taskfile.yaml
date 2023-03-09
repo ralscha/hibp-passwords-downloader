@@ -1,0 +1,45 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  CURRENT_DIR:
+    sh: pwd
+  SUFFIX: '{{if eq OS "windows"}}.exe{{end}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list-all
+
+  lint:
+    cmds:
+      - docker run --rm -v {{toSlash .CURRENT_DIR}}:/app -w /app golangci/golangci-lint:v1.51.1 golangci-lint run -v --timeout 5m
+
+  upgrade-libraries:
+    cmds:
+      - go get -u ./...
+      - go fmt ./...
+      - go mod tidy
+      - go mod verify
+
+  tidy:
+    cmds:
+      - go fmt ./...
+      - go mod tidy -v
+
+  audit:
+    cmds:
+      - go vet ./...
+      - go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
+      - go mod verify
+
+  build:
+    cmds:
+      - go build -ldflags='-s' -o=./hibp-passwords-downloader{{.SUFFIX}} .
+
+  run:
+    deps: [build]
+    cmds:
+      - ./bin/web{{.SUFFIX}}
+
