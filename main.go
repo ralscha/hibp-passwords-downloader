@@ -56,9 +56,9 @@ func main() {
 				ppd.OutputFileOrFolder = "hibp-passwords.txt"
 			}
 			if ppd.Parallelism == 0 {
-				ppd.Parallelism = runtime.NumCPU() * 2
-				if ppd.Parallelism > 8 {
-					ppd.Parallelism = 8
+				ppd.Parallelism = runtime.NumCPU() * 8
+				if ppd.Parallelism > 64 {
+					ppd.Parallelism = 64
 				}
 			}
 
@@ -187,7 +187,8 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 	hexPrefix := intToHex(prefix)
 	downloadFile := filepath.Join(ppd.DownloadFolder, hexPrefix+".txt")
 	if ppd.Resume {
-		if _, err := os.Stat(downloadFile); !os.IsNotExist(err) {
+		stat, err := os.Stat(downloadFile)
+		if err == nil && stat.Size() > 0 {
 			err = bar.Add(1)
 			if err != nil {
 				return err
