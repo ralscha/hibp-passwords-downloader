@@ -55,9 +55,9 @@ func main() {
 				ppd.OutputFileOrFolder = "hibp-passwords.txt"
 			}
 			if ppd.Parallelism == 0 {
-				ppd.Parallelism = runtime.NumCPU() * 4
-				if ppd.Parallelism > 24 {
-					ppd.Parallelism = 24
+				ppd.Parallelism = runtime.NumCPU() * 2
+				if ppd.Parallelism > 16 {
+					ppd.Parallelism = 16
 				}
 			}
 
