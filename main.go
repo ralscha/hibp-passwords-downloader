@@ -24,7 +24,6 @@ const (
 )
 
 type Statistics struct {
-	HashesDownloaded           uint64
 	CloudflareRequests         uint64
 	CloudflareHits             uint64
 	CloudflareMisses           uint64
@@ -69,7 +68,7 @@ func main() {
 
 	cmd.Flags().IntVarP(&ppd.Parallelism, "parallelism", "p", 0, "The number of parallel requests to make to Have I Been Pwned to download the hash ranges. If omitted, defaults to four times the number of processors on the machine. Maximum 24")
 	cmd.Flags().BoolVarP(&ppd.Overwrite, "overwrite", "o", false, "When set, overwrite any existing files while writing the results. Defaults to false.")
-	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", true, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If ommited defaults to single file.")
+	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", false, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If omitted defaults to individual files.")
 	cmd.Flags().BoolVarP(&ppd.FetchNtlm, "ntlm", "n", false, "When set, fetches NTLM hashes instead of SHA1.")
 	cmd.Flags().BoolVarP(&ppd.Resume, "resume", "r", false, "When individual files are used, resume download of existing files.")
 
@@ -136,7 +135,6 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 		return err
 	}
 
-	fmt.Printf("Hashes downloaded:               %d\n", ppd.Statistics.HashesDownloaded)
 	fmt.Printf("Cloudflare requests:             %d\n", ppd.Statistics.CloudflareRequests)
 	fmt.Printf("Cloudflare hits:                 %d\n", ppd.Statistics.CloudflareHits)
 	fmt.Printf("Cloudflare misses:               %d\n", ppd.Statistics.CloudflareMisses)
@@ -238,25 +236,17 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 	}
 
 	reader := brotli.NewReader(resp.Body)
-	respBody, err := io.ReadAll(reader)
-	if err != nil {
-		return err
-	}
 
-	splitted := strings.Split(string(respBody), "\n")
 	f, err := os.Create(downloadFile)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	for _, line := range splitted {
-		_, err = f.WriteString(hexPrefix + line + "\n")
-		if err != nil {
-			return err
-		}
+	_, err = io.Copy(f, reader)
+	if err != nil {
+		return err
 	}
-	atomic.AddUint64(&ppd.Statistics.HashesDownloaded, uint64(len(splitted)))
 
 	err = bar.Add(1)
 	if err != nil {
