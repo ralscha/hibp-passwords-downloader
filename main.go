@@ -54,9 +54,11 @@ func main() {
 			} else {
 				ppd.OutputFileOrFolder = "hibp-passwords.txt"
 			}
-
 			if ppd.Parallelism == 0 {
-				ppd.Parallelism = runtime.NumCPU() * 8
+				ppd.Parallelism = runtime.NumCPU() * 4
+				if ppd.Parallelism > 24 {
+					ppd.Parallelism = 24
+				}
 			}
 
 			ppd.Client = &http.Client{}
@@ -64,7 +66,7 @@ func main() {
 		},
 	}
 
-	cmd.Flags().IntVarP(&ppd.Parallelism, "parallelism", "p", 0, "The number of parallel requests to make to Have I Been Pwned to download the hash ranges. If omitted or less than 2, defaults to eight times the number of processors on the machine.")
+	cmd.Flags().IntVarP(&ppd.Parallelism, "parallelism", "p", 0, "The number of parallel requests to make to Have I Been Pwned to download the hash ranges. If omitted, defaults to four times the number of processors on the machine. Maximum 24")
 	cmd.Flags().BoolVarP(&ppd.Overwrite, "overwrite", "o", false, "When set, overwrite any existing files while writing the results. Defaults to false.")
 	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", true, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If ommited defaults to single file.")
 	cmd.Flags().BoolVarP(&ppd.FetchNtlm, "ntlm", "n", false, "When set, fetches NTLM hashes instead of SHA1.")
