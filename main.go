@@ -250,5 +250,5 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 }
 
 func intToHex(i int) string {
-	return fmt.Sprintf("%05x", i)
+	return strings.ToUpper(fmt.Sprintf("%05x", i))
 }
