@@ -38,6 +38,7 @@ type PwnedPasswordsDownloader struct {
 	DownloadFolder     string
 	Parallelism        int
 	Overwrite          bool
+	Resume             bool
 	SingleFile         bool
 	FetchNtlm          bool
 }
@@ -56,8 +57,8 @@ func main() {
 			}
 			if ppd.Parallelism == 0 {
 				ppd.Parallelism = runtime.NumCPU() * 2
-				if ppd.Parallelism > 16 {
-					ppd.Parallelism = 16
+				if ppd.Parallelism > 8 {
+					ppd.Parallelism = 8
 				}
 			}
 
@@ -70,6 +71,7 @@ func main() {
 	cmd.Flags().BoolVarP(&ppd.Overwrite, "overwrite", "o", false, "When set, overwrite any existing files while writing the results. Defaults to false.")
 	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", true, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If ommited defaults to single file.")
 	cmd.Flags().BoolVarP(&ppd.FetchNtlm, "ntlm", "n", false, "When set, fetches NTLM hashes instead of SHA1.")
+	cmd.Flags().BoolVarP(&ppd.Resume, "resume", "r", false, "When individual files are used, resume download of existing files.")
 
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
@@ -93,7 +95,7 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 			if files, err := os.ReadDir(ppd.OutputFileOrFolder); err == nil {
 				containsFiles = len(files) > 0
 			}
-			if !ppd.Overwrite && containsFiles {
+			if !ppd.Resume && !ppd.Overwrite && containsFiles {
 				return fmt.Errorf("output folder %q already exists and is not empty. Use -o if you want to overwrite it", ppd.OutputFileOrFolder)
 			}
 		} else {
@@ -183,6 +185,17 @@ func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
 
 func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar, prefix int) error {
 	hexPrefix := intToHex(prefix)
+	downloadFile := filepath.Join(ppd.DownloadFolder, hexPrefix+".txt")
+	if ppd.Resume {
+		if _, err := os.Stat(downloadFile); !os.IsNotExist(err) {
+			err = bar.Add(1)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
 	url := hibpURL + hexPrefix
 	if ppd.FetchNtlm {
 		url += "?mode=ntlm"
@@ -230,7 +243,7 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 	}
 
 	splitted := strings.Split(string(respBody), "\n")
-	f, err := os.Create(filepath.Join(ppd.DownloadFolder, hexPrefix+".txt"))
+	f, err := os.Create(downloadFile)
 	if err != nil {
 		return err
 	}
