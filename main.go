@@ -190,6 +190,7 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 		return err
 	}
 
+	req.Header.Set("User-Agent", "hibp-downloader")
 	req.Header.Set("Accept-Encoding", "br")
 
 	var resp *http.Response
@@ -200,7 +201,7 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(bar *progressbar.ProgressBar
 			resp, err = ppd.Client.Do(req)
 			return err
 		},
-		retry.Attempts(3),
+		retry.Attempts(10),
 		retry.OnRetry(func(n uint, err error) {
 			log.Printf("Retrying request after error: %v", err)
 		}),
