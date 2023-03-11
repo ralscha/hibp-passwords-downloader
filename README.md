@@ -3,22 +3,9 @@
 Clone of the [official HIBP passwords downloader](https://github.com/HaveIBeenPwned/PwnedPasswordsDownloader) written in Go. This program allows users to download the whole
 HIBP passwords database.
 
+# Installation
 
-# Building from source
-You need to have Go and Task installed on your machine. You can download Go from the [official website](https://golang.org/) and Task from [this website](https://taskfile.dev/)
-
-After installing Go and Task, clone this repository locally using the following command:
-
-```
-git clone https://github.com/ralscha/hibp-passwords-downloader.git
-```
-
-Once you have cloned the repository, navigate to the directory and build it:
-
-```
-cd hibp-passwords-downloader
-task build
-``` 
+Download the latest version from the [releases page](https://github.com/ralscha/hibp-passwords-downloader/releases/latest).
 
 # Usage
 
@@ -46,7 +33,6 @@ outputFileOrFolder: The name of the output file or folder where the downloaded f
 | resume | -r | false | When individual files are used, resume download. Skips already downloaded files.  |
 
 
-
 # Usage examples
 
 ### Download all SHA1 hashes to a single text file called `pwnedpasswords.txt`
@@ -59,3 +45,19 @@ outputFileOrFolder: The name of the output file or folder where the downloaded f
 `./hibp-passwords-downloader -n pwnedpasswords_ntlm.txt`
 
 
+# Building from source
+You need to have [Go](https://golang.org/), [GoReleaser](https://goreleaser.com/) and [Task](https://taskfile.dev/)
+installed on your machine.
+
+After installing the prerequisites, clone this repository locally using the following command:
+
+```
+git clone https://github.com/ralscha/hibp-passwords-downloader.git
+```
+
+Once you have cloned the repository, navigate to the directory and build it:
+
+```
+cd hibp-passwords-downloader
+task build
+``` 
