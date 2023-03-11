@@ -36,10 +36,11 @@ tasks:
 
   build:
     cmds:
-      - go build -ldflags='-s' -o=./hibp-passwords-downloader{{.SUFFIX}} .
+      - goreleaser build --single-target --snapshot
 
-  run:
-    deps: [build]
+  release:
     cmds:
-      - ./bin/web{{.SUFFIX}}
+      - git tag -a v0.1.0 -m "First release"
+      - git push origin v0.1.0
+      - goreleaser release
 
