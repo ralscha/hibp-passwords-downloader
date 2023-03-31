@@ -6,7 +6,7 @@ require (
 	github.com/alitto/pond v1.8.3
 	github.com/andybalholm/brotli v1.0.5
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/schollz/progressbar/v3 v3.13.0
+	github.com/schollz/progressbar/v3 v3.13.1
 	github.com/spf13/cobra v1.6.1
 )
 
