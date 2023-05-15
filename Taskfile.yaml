@@ -40,7 +40,7 @@ tasks:
 
   release:
     cmds:
-      - git tag -a v0.1.0 -m "First release"
-      - git push origin v0.1.0
+      - git tag -a v0.2.0 -m "Fix single file resume"
+      - git push origin v0.2.0
       - goreleaser release
 
