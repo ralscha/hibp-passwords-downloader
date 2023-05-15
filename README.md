@@ -24,13 +24,13 @@ outputFileOrFolder: The name of the output file or folder where the downloaded f
 
 # Flags
 
-| Flag        | Shorthand     | Default     | Description |
-|-------------|---------------|-------------|-------------|
-| parallelism  | -p | 4 * CPU cores  | The number of parallel requests to send to Have I Been Pwned to download the hash ranges. Has a maximum of 64. |
-| overwrite | -o | false | When set, overwrites any existing files while writing the results. |
-| single | -s | false | When set, writes the hash ranges into a single .txt file. Otherwise, downloads ranges to individual files into a subfolder. |
-| ntlm | -n | false | When set, fetches NTLM hashes instead of SHA1. |
-| resume | -r | false | When individual files are used, resume download. Skips already downloaded files.  |
+| Flag        | Shorthand | Default       | Description                                                                                                                 |
+|-------------|-----------|---------------|-----------------------------------------------------------------------------------------------------------------------------|
+| parallelism | -p        | 4 * CPU cores | The number of parallel requests to send to Have I Been Pwned to download the hash ranges. Has a maximum of 64.              |
+| overwrite   | -o        | false         | When set, overwrites any existing files while writing the results.                                                          |
+| single      | -s        | false         | When set, writes the hash ranges into a single .txt file. Otherwise, downloads ranges to individual files into a subfolder. |
+| ntlm        | -n        | false         | When set, fetches NTLM hashes instead of SHA1.                                                                              |
+| resume      | -r        | false         | Resumes download. Skips already downloaded files.                                                                           |
 
 
 # Usage examples

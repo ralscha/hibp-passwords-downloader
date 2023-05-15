@@ -84,9 +84,23 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 				return fmt.Errorf("output file %q already exists. Use -o if you want to overwrite it", ppd.OutputFileOrFolder)
 			}
 		}
-		ppd.DownloadFolder = ppd.OutputFileOrFolder + "_" + time.Now().Format("2006-01-02_15-04-05")
-		if err := os.Mkdir(ppd.DownloadFolder, os.ModePerm); err != nil {
-			return err
+		ppd.DownloadFolder = ".hibp_" + ppd.OutputFileOrFolder
+
+		if _, err := os.Stat(ppd.DownloadFolder); !os.IsNotExist(err) {
+			if ppd.Resume {
+				fmt.Printf("resuming download of %q\n", ppd.OutputFileOrFolder)
+			} else {
+				if err := os.RemoveAll(ppd.DownloadFolder); err != nil {
+					return err
+				}
+				if err := os.Mkdir(ppd.DownloadFolder, os.ModePerm); err != nil {
+					return err
+				}
+			}
+		} else {
+			if err := os.Mkdir(ppd.DownloadFolder, os.ModePerm); err != nil {
+				return err
+			}
 		}
 	} else {
 		if _, err := os.Stat(ppd.OutputFileOrFolder); !os.IsNotExist(err) {
@@ -97,6 +111,7 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 			if !ppd.Resume && !ppd.Overwrite && containsFiles {
 				return fmt.Errorf("output folder %q already exists and is not empty. Use -o if you want to overwrite it", ppd.OutputFileOrFolder)
 			}
+			fmt.Printf("resuming download of %q\n", ppd.OutputFileOrFolder)
 		} else {
 			if err := os.Mkdir(ppd.OutputFileOrFolder, os.ModePerm); err != nil {
 				return err
