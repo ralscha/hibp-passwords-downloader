@@ -70,7 +70,7 @@ func main() {
 	cmd.Flags().BoolVarP(&ppd.Overwrite, "overwrite", "o", false, "When set, overwrite any existing files while writing the results. Defaults to false.")
 	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", false, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If omitted defaults to individual files.")
 	cmd.Flags().BoolVarP(&ppd.FetchNtlm, "ntlm", "n", false, "When set, fetches NTLM hashes instead of SHA1.")
-	cmd.Flags().BoolVarP(&ppd.Resume, "resume", "r", false, "When individual files are used, resume download of existing files.")
+	cmd.Flags().BoolVarP(&ppd.Resume, "resume", "r", false, "When set, resumes download of existing files.")
 
 	if err := cmd.Execute(); err != nil {
 		os.Exit(1)
