@@ -1,6 +1,6 @@
 module hibp_pw_downloader.rasc.ch
 
-go 1.20
+go 1.21
 
 require (
 	github.com/alitto/pond v1.8.3
@@ -17,6 +17,6 @@ require (
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/testify v1.8.2 // indirect
-	golang.org/x/sys v0.10.0 // indirect
-	golang.org/x/term v0.10.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/term v0.11.0 // indirect
 )
