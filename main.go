@@ -120,16 +120,20 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 		ppd.DownloadFolder = ppd.OutputFileOrFolder
 	}
 
-	max := 1024 * 1024
+	maxValue := 1024 * 1024
 
-	bar := progressbar.Default(int64(max))
-	pool := pond.New(ppd.Parallelism, max)
-	for hashPrefix := 0; hashPrefix < max; hashPrefix++ {
+	bar := progressbar.Default(int64(maxValue))
+	pool := pond.New(ppd.Parallelism, maxValue)
+	for hashPrefix := 0; hashPrefix < maxValue; hashPrefix++ {
 		p := hashPrefix
 		pool.Submit(func() {
 			err := ppd.downloadHashes(bar, p)
 			if err != nil {
-				log.Fatal(err)
+				time.Sleep(time.Second)
+				err = ppd.downloadHashes(bar, p)
+				if err != nil {
+					log.Fatal(err)
+				}
 			}
 		})
 	}
@@ -153,9 +157,13 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 	fmt.Printf("Cloudflare requests:             %d\n", ppd.Statistics.CloudflareRequests)
 	fmt.Printf("Cloudflare hits:                 %d\n", ppd.Statistics.CloudflareHits)
 	fmt.Printf("Cloudflare misses:               %d\n", ppd.Statistics.CloudflareMisses)
-	fmt.Printf("Cloudflare hit rate:             %d %%\n", ppd.Statistics.CloudflareHits*100/ppd.Statistics.CloudflareRequests)
+	if ppd.Statistics.CloudflareRequests > 0 {
+		fmt.Printf("Cloudflare hit rate:             %d %%\n", ppd.Statistics.CloudflareHits*100/ppd.Statistics.CloudflareRequests)
+	}
 	fmt.Printf("Cloudflare request time total:   %d ms\n", ppd.Statistics.CloudflareRequestTimeTotal)
-	fmt.Printf("Cloudflare request time average: %d ms\n", ppd.Statistics.CloudflareRequestTimeTotal/ppd.Statistics.CloudflareRequests)
+	if ppd.Statistics.CloudflareRequests > 0 {
+		fmt.Printf("Cloudflare request time average: %d ms\n", ppd.Statistics.CloudflareRequestTimeTotal/ppd.Statistics.CloudflareRequests)
+	}
 
 	return nil
 }
