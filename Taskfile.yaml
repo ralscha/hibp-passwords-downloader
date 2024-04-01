@@ -14,7 +14,7 @@ tasks:
 
   lint:
     cmds:
-      - docker run --rm -v {{toSlash .CURRENT_DIR}}:/app -w /app golangci/golangci-lint:v1.55.2 golangci-lint run -v --timeout 5m
+      - docker run --rm -v {{toSlash .CURRENT_DIR}}:/app -w /app golangci/golangci-lint:v1.57.2 golangci-lint run -v --timeout 5m
 
   upgrade-libraries:
     cmds:
@@ -40,7 +40,7 @@ tasks:
 
   release:
     cmds:
-      - git tag -a v0.2.0 -m "Fix single file resume"
-      - git push origin v0.2.0
+      - git tag -a v0.2.1 -m "Built with Go 1.22.1. Upgrade dependencies."
+      - git push origin v0.2.1
       - goreleaser release
 
