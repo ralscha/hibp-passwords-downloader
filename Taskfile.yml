@@ -41,7 +41,7 @@ tasks:
 
   release:
     cmds:
-      - git tag -a v0.2.1 -m "Built with Go 1.22.1. Upgrade dependencies."
-      - git push origin v0.2.1
+      - git tag -a v0.2.2 -m "Built with Go 1.25.0. Upgrade dependencies."
+      - git push origin v0.2.2
       - goreleaser release
 
