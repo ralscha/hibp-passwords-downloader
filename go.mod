@@ -1,6 +1,6 @@
 module hibp_pw_downloader.rasc.ch
 
-go 1.25.2
+go 1.25.3
 
 require (
 	github.com/alitto/pond v1.9.2
