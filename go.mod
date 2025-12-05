@@ -1,13 +1,13 @@
 module hibp_pw_downloader.rasc.ch
 
-go 1.25.4
+go 1.25.5
 
 require (
 	github.com/alitto/pond v1.9.2
 	github.com/andybalholm/brotli v1.2.0
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/schollz/progressbar/v3 v3.18.0
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 )
 
 require (
