@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -10,16 +11,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/alitto/pond"
 	"github.com/andybalholm/brotli"
 	"github.com/avast/retry-go"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -73,7 +73,12 @@ func main() {
 				ppd.Parallelism = min(runtime.NumCPU()*8, 64)
 			}
 
-			ppd.Client = &http.Client{Timeout: 60 * time.Second}
+			ppd.Client = &http.Client{
+				Timeout: 60 * time.Second,
+				Transport: &http.Transport{
+					MaxIdleConnsPerHost: ppd.Parallelism,
+				},
+			}
 			return ppd.execute()
 		},
 	}
@@ -96,7 +101,7 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 				return fmt.Errorf("output file %q already exists. Use -o if you want to overwrite it", ppd.OutputFileOrFolder)
 			}
 		}
-		ppd.DownloadFolder = ".hibp_" + ppd.OutputFileOrFolder
+		ppd.DownloadFolder = filepath.Join(filepath.Dir(ppd.OutputFileOrFolder), ".hibp_"+filepath.Base(ppd.OutputFileOrFolder))
 
 		if _, err := os.Stat(ppd.DownloadFolder); !os.IsNotExist(err) {
 			if ppd.Resume {
@@ -126,7 +131,9 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 			if !ppd.Resume && !ppd.Overwrite && containsFiles {
 				return fmt.Errorf("output folder %q already exists and is not empty. Use -o if you want to overwrite it", ppd.OutputFileOrFolder)
 			}
-			fmt.Printf("resuming download of %q\n", ppd.OutputFileOrFolder)
+			if ppd.Resume && containsFiles {
+				fmt.Printf("resuming download of %q\n", ppd.OutputFileOrFolder)
+			}
 		} else if !os.IsNotExist(err) {
 			return err
 		} else {
@@ -138,35 +145,17 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 	}
 
 	maxValue := 1024 * 1024
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	errChan := make(chan error, 1)
-	var hasError atomic.Bool
-
 	bar := progressbar.Default(int64(maxValue))
-	pool := pond.New(ppd.Parallelism, maxValue)
+
+	g, ctx := errgroup.WithContext(context.Background())
+	g.SetLimit(ppd.Parallelism)
 	for hashPrefix := range maxValue {
 		p := hashPrefix
-		pool.Submit(func() {
-			err := ppd.downloadHashes(ctx, bar, p)
-			if err != nil {
-				time.Sleep(time.Second)
-				err = ppd.downloadHashes(ctx, bar, p)
-				if err != nil {
-					if hasError.CompareAndSwap(false, true) {
-						select {
-						case errChan <- err:
-						default:
-						}
-						cancel()
-					}
-				}
-			}
+		g.Go(func() error {
+			return ppd.downloadHashes(ctx, bar, p)
 		})
 	}
-	pool.StopAndWait()
-	close(errChan)
-	if err, ok := <-errChan; ok {
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
@@ -180,10 +169,7 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 		}
 	}
 
-	err := bar.Finish()
-	if err != nil {
-		return err
-	}
+	_ = bar.Finish()
 
 	fmt.Printf("Cloudflare requests:             %d\n", ppd.Statistics.CloudflareRequests)
 	fmt.Printf("Cloudflare hits:                 %d\n", ppd.Statistics.CloudflareHits)
@@ -204,43 +190,39 @@ func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
 	if err != nil {
 		return err
 	}
-	var fileNames []string
-	for _, file := range files {
-		fileNames = append(fileNames, file.Name())
-	}
-	sort.Strings(fileNames)
 
 	outputFile, err := os.Create(ppd.OutputFileOrFolder)
 	if err != nil {
 		return err
 	}
-	defer outputFile.Close()
 
-	for _, fileName := range fileNames {
+	for _, entry := range files {
+		fileName := entry.Name()
 		err := func() error {
-			file, err := os.Open(ppd.DownloadFolder + "/" + fileName)
+			f, err := os.Open(filepath.Join(ppd.DownloadFolder, fileName))
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer f.Close()
 
-			if _, err := io.Copy(outputFile, file); err != nil {
+			if _, err := io.Copy(outputFile, f); err != nil {
 				return err
 			}
 
 			return nil
 		}()
 		if err != nil {
+			outputFile.Close()
 			return err
 		}
 
-		err = os.Remove(ppd.DownloadFolder + "/" + fileName)
-		if err != nil {
+		if err := os.Remove(filepath.Join(ppd.DownloadFolder, fileName)); err != nil {
+			outputFile.Close()
 			return err
 		}
 	}
 
-	return nil
+	return outputFile.Close()
 }
 
 func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *progressbar.ProgressBar, prefix int) error {
@@ -253,10 +235,7 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 	if ppd.Resume {
 		stat, err := os.Stat(downloadFile)
 		if err == nil && stat.Size() > 0 {
-			err = bar.Add(1)
-			if err != nil {
-				return err
-			}
+			_ = bar.Add(1)
 			return nil
 		}
 	}
@@ -269,6 +248,9 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 	start := time.Now()
 	err := retry.Do(
 		func() error {
+			if err := ctx.Err(); err != nil {
+				return retry.Unrecoverable(err)
+			}
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			if err != nil {
 				return retry.Unrecoverable(err)
@@ -321,22 +303,34 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 
 	reader := brotli.NewReader(resp.Body)
 
-	f, err := os.Create(downloadFile)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = io.Copy(f, reader)
+	tmpFile := downloadFile + ".tmp"
+	f, err := os.Create(tmpFile)
 	if err != nil {
 		return err
 	}
 
-	err = bar.Add(1)
-	if err != nil {
+	w := bufio.NewWriterSize(f, 32*1024)
+	if _, err := io.Copy(w, reader); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return err
+	}
+	if err := w.Flush(); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmpFile)
 		return err
 	}
 
+	if err := os.Rename(tmpFile, downloadFile); err != nil {
+		os.Remove(tmpFile)
+		return err
+	}
+
+	_ = bar.Add(1)
 	return nil
 }
 

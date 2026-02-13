@@ -3,11 +3,11 @@ module hibp_pw_downloader.rasc.ch
 go 1.26.0
 
 require (
-	github.com/alitto/pond v1.9.2
 	github.com/andybalholm/brotli v1.2.0
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sync v0.19.0
 )
 
 require (
