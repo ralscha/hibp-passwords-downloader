@@ -110,12 +110,12 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 				if err := os.RemoveAll(ppd.DownloadFolder); err != nil {
 					return err
 				}
-				if err := os.Mkdir(ppd.DownloadFolder, os.ModePerm); err != nil {
+				if err := os.MkdirAll(ppd.DownloadFolder, os.ModePerm); err != nil {
 					return err
 				}
 			}
 		} else {
-			if err := os.Mkdir(ppd.DownloadFolder, os.ModePerm); err != nil {
+			if err := os.MkdirAll(ppd.DownloadFolder, os.ModePerm); err != nil {
 				return err
 			}
 		}
@@ -137,7 +137,7 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 		} else if !os.IsNotExist(err) {
 			return err
 		} else {
-			if err := os.Mkdir(ppd.OutputFileOrFolder, os.ModePerm); err != nil {
+			if err := os.MkdirAll(ppd.OutputFileOrFolder, os.ModePerm); err != nil {
 				return err
 			}
 		}
@@ -150,9 +150,8 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(ppd.Parallelism)
 	for hashPrefix := range maxValue {
-		p := hashPrefix
 		g.Go(func() error {
-			return ppd.downloadHashes(ctx, bar, p)
+			return ppd.downloadHashes(ctx, bar, hashPrefix)
 		})
 	}
 	if err := g.Wait(); err != nil {
@@ -171,21 +170,26 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 
 	_ = bar.Finish()
 
-	fmt.Printf("Cloudflare requests:             %d\n", ppd.Statistics.CloudflareRequests)
-	fmt.Printf("Cloudflare hits:                 %d\n", ppd.Statistics.CloudflareHits)
-	fmt.Printf("Cloudflare misses:               %d\n", ppd.Statistics.CloudflareMisses)
-	if ppd.Statistics.CloudflareRequests > 0 {
-		fmt.Printf("Cloudflare hit rate:             %d %%\n", ppd.Statistics.CloudflareHits*100/ppd.Statistics.CloudflareRequests)
+	cfRequests := atomic.LoadUint64(&ppd.Statistics.CloudflareRequests)
+	cfHits := atomic.LoadUint64(&ppd.Statistics.CloudflareHits)
+	cfMisses := atomic.LoadUint64(&ppd.Statistics.CloudflareMisses)
+	cfRequestTime := atomic.LoadUint64(&ppd.Statistics.CloudflareRequestTimeTotal)
+
+	fmt.Printf("Cloudflare requests:             %d\n", cfRequests)
+	fmt.Printf("Cloudflare hits:                 %d\n", cfHits)
+	fmt.Printf("Cloudflare misses:               %d\n", cfMisses)
+	if cfRequests > 0 {
+		fmt.Printf("Cloudflare hit rate:             %d %%\n", cfHits*100/cfRequests)
 	}
-	fmt.Printf("Cloudflare request time total:   %d ms\n", ppd.Statistics.CloudflareRequestTimeTotal)
-	if ppd.Statistics.CloudflareRequests > 0 {
-		fmt.Printf("Cloudflare request time average: %d ms\n", ppd.Statistics.CloudflareRequestTimeTotal/ppd.Statistics.CloudflareRequests)
+	fmt.Printf("Cloudflare request time total:   %d ms\n", cfRequestTime)
+	if cfRequests > 0 {
+		fmt.Printf("Cloudflare request time average: %d ms\n", cfRequestTime/cfRequests)
 	}
 
 	return nil
 }
 
-func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
+func (ppd *PwnedPasswordsDownloader) mergeFiles() (retErr error) {
 	files, err := os.ReadDir(ppd.DownloadFolder)
 	if err != nil {
 		return err
@@ -195,6 +199,11 @@ func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := outputFile.Close(); err != nil && retErr == nil {
+			retErr = err
+		}
+	}()
 
 	for _, entry := range files {
 		fileName := entry.Name()
@@ -203,7 +212,7 @@ func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
 			if err != nil {
 				return err
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			if _, err := io.Copy(outputFile, f); err != nil {
 				return err
@@ -212,17 +221,15 @@ func (ppd *PwnedPasswordsDownloader) mergeFiles() error {
 			return nil
 		}()
 		if err != nil {
-			outputFile.Close()
 			return err
 		}
 
 		if err := os.Remove(filepath.Join(ppd.DownloadFolder, fileName)); err != nil {
-			outputFile.Close()
 			return err
 		}
 	}
 
-	return outputFile.Close()
+	return nil
 }
 
 func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *progressbar.ProgressBar, prefix int) error {
@@ -245,7 +252,7 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 		url += "?mode=ntlm"
 	}
 	var resp *http.Response
-	start := time.Now()
+	var requestDuration time.Duration
 	err := retry.Do(
 		func() error {
 			if err := ctx.Err(); err != nil {
@@ -259,12 +266,14 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 			req.Header.Set("User-Agent", "hibp-downloader")
 			req.Header.Set("Accept-Encoding", "br")
 
+			start := time.Now()
 			resp, err = ppd.Client.Do(req)
+			requestDuration = time.Since(start)
 			if err != nil {
 				return err
 			}
 			if resp.StatusCode != http.StatusOK {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				statusErr := &httpStatusError{statusCode: resp.StatusCode}
 				if statusErr.Retryable() {
 					return statusErr
@@ -276,6 +285,9 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 		},
 		retry.Attempts(10),
 		retry.RetryIf(func(err error) bool {
+			if ctx.Err() != nil {
+				return false
+			}
 			if statusErr, ok := errors.AsType[*httpStatusError](err); ok {
 				return statusErr.Retryable()
 			}
@@ -286,12 +298,12 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 			log.Printf("Retrying request after error: %v", err)
 		}),
 	)
-	atomic.AddUint64(&ppd.Statistics.CloudflareRequestTimeTotal, uint64(time.Since(start).Milliseconds()))
+	atomic.AddUint64(&ppd.Statistics.CloudflareRequestTimeTotal, uint64(requestDuration.Milliseconds()))
 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	cfCacheStatus := resp.Header.Get("Cf-Cache-Status")
 	atomic.AddUint64(&ppd.Statistics.CloudflareRequests, 1)
@@ -311,22 +323,22 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 
 	w := bufio.NewWriterSize(f, 32*1024)
 	if _, err := io.Copy(w, reader); err != nil {
-		f.Close()
-		os.Remove(tmpFile)
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
 		return err
 	}
 	if err := w.Flush(); err != nil {
-		f.Close()
-		os.Remove(tmpFile)
+		_ = f.Close()
+		_ = os.Remove(tmpFile)
 		return err
 	}
 	if err := f.Close(); err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return err
 	}
 
 	if err := os.Rename(tmpFile, downloadFile); err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return err
 	}
 
