@@ -16,14 +16,16 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
-	"github.com/avast/retry-go"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	hibpURL = "https://api.pwnedpasswords.com/range/"
+	hibpURL         = "https://api.pwnedpasswords.com/range/"
+	maxHashPrefixes = 1024 * 1024
+	requestAttempts = 10
+	maxParallelism  = 64
 )
 
 type Statistics struct {
@@ -45,6 +47,8 @@ type PwnedPasswordsDownloader struct {
 	FetchNtlm          bool
 }
 
+var version = "dev"
+
 type httpStatusError struct {
 	statusCode int
 }
@@ -60,17 +64,25 @@ func (e *httpStatusError) Retryable() bool {
 func main() {
 	var ppd PwnedPasswordsDownloader
 	cmd := &cobra.Command{
-		Use:   "hibp-passwords-downloader [outputFileOrFolder]",
-		Short: "Downloads Have I Been Pwned passwords hashes lists to find compromised passwords",
-		Args:  cobra.MaximumNArgs(1),
+		Use:     "hibp-passwords-downloader [outputFileOrFolder]",
+		Short:   "Downloads Have I Been Pwned passwords hashes lists to find compromised passwords",
+		Args:    cobra.MaximumNArgs(1),
+		Version: version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				ppd.OutputFileOrFolder = args[0]
-			} else {
+			} else if ppd.SingleFile {
 				ppd.OutputFileOrFolder = "hibp-passwords.txt"
+			} else {
+				ppd.OutputFileOrFolder = "hibp-passwords"
+			}
+			if ppd.Parallelism < 0 {
+				return fmt.Errorf("parallelism must be greater than or equal to 0")
 			}
 			if ppd.Parallelism == 0 {
-				ppd.Parallelism = min(runtime.NumCPU()*8, 64)
+				ppd.Parallelism = min(runtime.NumCPU()*8, maxParallelism)
+			} else {
+				ppd.Parallelism = min(ppd.Parallelism, maxParallelism)
 			}
 
 			ppd.Client = &http.Client{
@@ -83,7 +95,7 @@ func main() {
 		},
 	}
 
-	cmd.Flags().IntVarP(&ppd.Parallelism, "parallelism", "p", 0, "The number of parallel requests to make to Have I Been Pwned to download the hash ranges. If omitted, defaults to eight times the number of processors on the machine. Maximum 64")
+	cmd.Flags().IntVarP(&ppd.Parallelism, "parallelism", "p", 0, "The number of parallel requests to make to Have I Been Pwned to download the hash ranges. If omitted, defaults to eight times the number of processors on the machine. Maximum 64; values above 64 are capped")
 	cmd.Flags().BoolVarP(&ppd.Overwrite, "overwrite", "o", false, "When set, overwrite any existing files while writing the results. Defaults to false.")
 	cmd.Flags().BoolVarP(&ppd.SingleFile, "single", "s", false, "When set, writes the hash ranges into a single .txt file. Otherwise downloads ranges to individual files into a subfolder. If omitted defaults to individual files.")
 	cmd.Flags().BoolVarP(&ppd.FetchNtlm, "ntlm", "n", false, "When set, fetches NTLM hashes instead of SHA1.")
@@ -144,12 +156,11 @@ func (ppd *PwnedPasswordsDownloader) execute() error {
 		ppd.DownloadFolder = ppd.OutputFileOrFolder
 	}
 
-	maxValue := 1024 * 1024
-	bar := progressbar.Default(int64(maxValue))
+	bar := progressbar.Default(int64(maxHashPrefixes))
 
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(ppd.Parallelism)
-	for hashPrefix := range maxValue {
+	for hashPrefix := range maxHashPrefixes {
 		g.Go(func() error {
 			return ppd.downloadHashes(ctx, bar, hashPrefix)
 		})
@@ -251,55 +262,8 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 	if ppd.FetchNtlm {
 		url += "?mode=ntlm"
 	}
-	var resp *http.Response
-	var requestDuration time.Duration
-	err := retry.Do(
-		func() error {
-			if err := ctx.Err(); err != nil {
-				return retry.Unrecoverable(err)
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-			if err != nil {
-				return retry.Unrecoverable(err)
-			}
-
-			req.Header.Set("User-Agent", "hibp-downloader")
-			req.Header.Set("Accept-Encoding", "br")
-
-			start := time.Now()
-			resp, err = ppd.Client.Do(req)
-			requestDuration = time.Since(start)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != http.StatusOK {
-				_ = resp.Body.Close()
-				statusErr := &httpStatusError{statusCode: resp.StatusCode}
-				if statusErr.Retryable() {
-					return statusErr
-				}
-				return retry.Unrecoverable(statusErr)
-			}
-
-			return nil
-		},
-		retry.Attempts(10),
-		retry.RetryIf(func(err error) bool {
-			if ctx.Err() != nil {
-				return false
-			}
-			if statusErr, ok := errors.AsType[*httpStatusError](err); ok {
-				return statusErr.Retryable()
-			}
-
-			return true
-		}),
-		retry.OnRetry(func(n uint, err error) {
-			log.Printf("Retrying request after error: %v", err)
-		}),
-	)
+	resp, requestDuration, err := ppd.getWithRetries(ctx, url)
 	atomic.AddUint64(&ppd.Statistics.CloudflareRequestTimeTotal, uint64(requestDuration.Milliseconds()))
-
 	if err != nil {
 		return err
 	}
@@ -313,7 +277,10 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 		atomic.AddUint64(&ppd.Statistics.CloudflareMisses, 1)
 	}
 
-	reader := brotli.NewReader(resp.Body)
+	var reader io.Reader = resp.Body
+	if strings.EqualFold(resp.Header.Get("Content-Encoding"), "br") {
+		reader = brotli.NewReader(resp.Body)
+	}
 
 	tmpFile := downloadFile + ".tmp"
 	f, err := os.Create(tmpFile)
@@ -337,13 +304,94 @@ func (ppd *PwnedPasswordsDownloader) downloadHashes(ctx context.Context, bar *pr
 		return err
 	}
 
-	if err := os.Rename(tmpFile, downloadFile); err != nil {
+	if err := replaceFile(tmpFile, downloadFile, ppd.Overwrite); err != nil {
 		_ = os.Remove(tmpFile)
 		return err
 	}
 
 	_ = bar.Add(1)
 	return nil
+}
+
+func (ppd *PwnedPasswordsDownloader) getWithRetries(ctx context.Context, url string) (*http.Response, time.Duration, error) {
+	var totalDuration time.Duration
+	var lastErr error
+
+	for attempt := 1; attempt <= requestAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, totalDuration, err
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, totalDuration, err
+		}
+		req.Header.Set("User-Agent", "hibp-downloader")
+		req.Header.Set("Accept-Encoding", "br")
+
+		start := time.Now()
+		resp, err := ppd.Client.Do(req)
+		totalDuration += time.Since(start)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			return resp, totalDuration, nil
+		}
+
+		if err != nil {
+			lastErr = err
+		} else {
+			_ = resp.Body.Close()
+			statusErr := &httpStatusError{statusCode: resp.StatusCode}
+			if !statusErr.Retryable() {
+				return nil, totalDuration, statusErr
+			}
+			lastErr = statusErr
+		}
+
+		if attempt < requestAttempts {
+			log.Printf("Retrying request after error: %v", lastErr)
+			if err := sleepWithContext(ctx, retryDelay(attempt)); err != nil {
+				return nil, totalDuration, err
+			}
+		}
+	}
+
+	return nil, totalDuration, lastErr
+}
+
+func retryDelay(attempt int) time.Duration {
+	delay := time.Duration(attempt) * 250 * time.Millisecond
+	if delay > 2*time.Second {
+		return 2 * time.Second
+	}
+	return delay
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func replaceFile(source, target string, overwrite bool) error {
+	if !overwrite {
+		if _, err := os.Stat(target); err == nil {
+			return fmt.Errorf("target file %q already exists", target)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return os.Rename(source, target)
+	}
+
+	if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.Rename(source, target)
 }
 
 func intToHex(i int) string {

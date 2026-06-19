@@ -1,63 +1,77 @@
 # hibp-passwords-downloader
 
-Clone of the [official HIBP passwords downloader](https://github.com/HaveIBeenPwned/PwnedPasswordsDownloader) written in Go. This program allows users to download the whole
-HIBP passwords database.
+A Go downloader for the [Have I Been Pwned Pwned Passwords](https://haveibeenpwned.com/Passwords) hash ranges. It can download SHA-1 or NTLM ranges either as one file per range or merged into a single text file.
 
-# Installation
+## Installation
 
 Download the latest version from the [releases page](https://github.com/ralscha/hibp-passwords-downloader/releases/latest).
 
-# Usage
+## Usage
 
-On Linux/macOS
-```
-./hibp-passwords-downloader [outputFileOrFolder]
-```
+Linux/macOS:
 
-On Windows
-```
-hibp-passwords-downloader.exe [outputFileOrFolder]
+```sh
+./hibp-passwords-downloader [flags] [outputFileOrFolder]
 ```
 
-outputFileOrFolder: The name of the output file or folder where the downloaded files will be stored.
+Windows:
 
-
-# Flags
-
-| Flag        | Shorthand | Default       | Description                                                                                                                 |
-|-------------|-----------|---------------|-----------------------------------------------------------------------------------------------------------------------------|
-| parallelism | -p        | 8 * CPU cores | The number of parallel requests to send to Have I Been Pwned to download the hash ranges. Has a maximum of 64.              |
-| overwrite   | -o        | false         | When set, overwrites any existing files while writing the results.                                                          |
-| single      | -s        | false         | When set, writes the hash ranges into a single .txt file. Otherwise, downloads ranges to individual files into a subfolder. |
-| ntlm        | -n        | false         | When set, fetches NTLM hashes instead of SHA1.                                                                              |
-| resume      | -r        | false         | Resumes download. Skips already downloaded files.                                                                           |
-
-
-# Usage examples
-
-### Download all SHA1 hashes to a single text file called `pwnedpasswords.txt`
-`./hibp-passwords-downloader -s pwnedpasswords.txt`
-
-### Download all SHA1 hashes to individual text files into the `pwnd` directory.
-`./hibp-passwords-downloader pwnd`
-
-### Download all NTLM hashes to a single txt file called `pwnedpasswords_ntlm.txt`
-`./hibp-passwords-downloader -n pwnedpasswords_ntlm.txt`
-
-
-# Building from source
-You need to have [Go](https://golang.org/), [GoReleaser](https://goreleaser.com/) and [Task](https://taskfile.dev/)
-installed on your machine.
-
-After installing the prerequisites, clone this repository locally using the following command:
-
+```powershell
+hibp-passwords-downloader.exe [flags] [outputFileOrFolder]
 ```
+
+If `outputFileOrFolder` is omitted, the downloader writes range files into `hibp-passwords`. With `--single`, it writes `hibp-passwords.txt`.
+
+## Flags
+
+| Flag | Shorthand | Default | Description |
+| --- | --- | --- | --- |
+| `--parallelism` | `-p` | `8 * CPU cores`, capped at `64` | Number of parallel range requests. Values above `64` are capped. Use `0` for the default. |
+| `--overwrite` | `-o` | `false` | Overwrite existing output files while writing results. |
+| `--single` | `-s` | `false` | Merge all ranges into a single `.txt` file. Without this flag, ranges are stored as individual files in a folder. |
+| `--ntlm` | `-n` | `false` | Fetch NTLM hashes instead of SHA-1 hashes. |
+| `--resume` | `-r` | `false` | Resume a previous download by skipping existing non-empty range files. |
+| `--version` | | | Print the binary version. |
+| `--help` | `-h` | | Print help. |
+
+## Examples
+
+Download all SHA-1 hashes to individual range files in the `pwnd` directory:
+
+```sh
+./hibp-passwords-downloader pwnd
+```
+
+Download all SHA-1 hashes to a single text file:
+
+```sh
+./hibp-passwords-downloader -s pwnedpasswords.txt
+```
+
+Download all NTLM hashes to a single text file:
+
+```sh
+./hibp-passwords-downloader -n -s pwnedpasswords_ntlm.txt
+```
+
+Resume an interrupted folder download:
+
+```sh
+./hibp-passwords-downloader -r pwnd
+```
+
+## Building from source
+
+You need [Go](https://go.dev/), [GoReleaser](https://goreleaser.com/), and [Task](https://taskfile.dev/) installed.
+
+```sh
 git clone https://github.com/ralscha/hibp-passwords-downloader.git
-```
-
-Once you have cloned the repository, navigate to the directory and build it:
-
-```
 cd hibp-passwords-downloader
 task build
-``` 
+```
+
+For a simple local build without GoReleaser:
+
+```sh
+go build ./...
+```
