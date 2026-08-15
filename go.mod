@@ -1,6 +1,6 @@
 module hibp_pw_downloader.rasc.ch
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/andybalholm/brotli v1.2.2
