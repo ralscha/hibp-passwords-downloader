@@ -4,14 +4,23 @@ version: '3'
 
 tasks:
   default:
+    desc: List all available tasks
+    silent: true
     cmds:
-      - task --list-all
+      - task --list
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test ./...
 
   lint:
+    desc: Run golangci-lint
     cmds:
       - golangci-lint run -v --timeout 5m
 
   upgrade-libraries:
+    desc: Upgrade Go and all dependencies
     cmds:
       - go get go@latest
       - go get -u ./...
@@ -20,23 +29,67 @@ tasks:
       - go mod verify
 
   tidy:
+    desc: Format source files and tidy modules
     cmds:
+      - go fix ./...
       - go fmt ./...
       - go mod tidy -v
 
   audit:
+    desc: Run static analysis and verify modules
     cmds:
       - go vet ./...
       - go run honnef.co/go/tools/cmd/staticcheck@latest -checks=all,-ST1000,-U1000 ./...
       - go mod verify
 
   build:
+    desc: Build a snapshot binary for the current platform
     cmds:
       - goreleaser build --single-target --snapshot
 
-  release:
+  snapshot:
+    desc: Build all release archives locally without publishing
     cmds:
-      - git tag -a v1.0.0 -m "Built with Go 1.26. Refactor download logic."
-      - git push origin v1.0.0
-      - goreleaser release
+      - goreleaser release --snapshot --clean --skip=publish
 
+  tag:
+    desc: Create a local release tag
+    summary: |
+      Create a local release tag.
+
+      Run with `task --interactive tag` to be prompted for TAG,
+      or pass it explicitly with `task tag TAG=v1.1.0`.
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: 'case "{{.TAG}}" in v*) exit 0 ;; *) exit 1 ;; esac'
+        msg: TAG must start with v, for example v1.1.0
+      - sh: 'if git rev-parse -q --verify "refs/tags/{{.TAG}}" >/dev/null 2>&1; then exit 1; fi; exit 0'
+        msg: Tag already exists locally
+    cmds:
+      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
+
+  push-tag:
+    desc: Push an existing release tag to GitHub
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: 'case "{{.TAG}}" in v*) exit 0 ;; *) exit 1 ;; esac'
+        msg: TAG must start with v, for example v1.1.0
+      - sh: 'if git rev-parse -q --verify "refs/tags/{{.TAG}}" >/dev/null 2>&1; then exit 0; else exit 1; fi'
+        msg: Tag does not exist locally. Run `task tag TAG=v1.1.0` first.
+    cmds:
+      - git push origin {{.TAG}}
+
+  release-tag:
+    desc: Create and push a release tag to trigger GitHub Actions
+    requires:
+      vars: [TAG]
+    preconditions:
+      - sh: 'case "{{.TAG}}" in v*) exit 0 ;; *) exit 1 ;; esac'
+        msg: TAG must start with v, for example v1.1.0
+      - sh: 'if git rev-parse -q --verify "refs/tags/{{.TAG}}" >/dev/null 2>&1; then exit 1; fi; exit 0'
+        msg: Tag already exists locally
+    cmds:
+      - git tag -a {{.TAG}} -m "Release {{.TAG}}"
+      - git push origin {{.TAG}}
