@@ -3,7 +3,7 @@ module hibp_pw_downloader.rasc.ch
 go 1.27.1
 
 require (
-	github.com/andybalholm/brotli v1.2.4
+	github.com/andybalholm/brotli v1.2.5
 	github.com/schollz/progressbar/v3 v3.19.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.23.0
